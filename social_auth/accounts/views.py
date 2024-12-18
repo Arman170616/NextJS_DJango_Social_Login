@@ -1,32 +1,21 @@
-import requests
-from rest_framework.views import APIView
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.models import User
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
-class GoogleLoginView(APIView):
-    def post(self, request):
-        token = request.data.get("token")
-        # Verify token with Google's OAuth API
-        response = requests.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={token}")
-        
-        if response.status_code == 200:
-            user_data = response.json()
-            email = user_data.get("email")
-            name = user_data.get("name")
+@api_view(['POST'])
+def google_login(request):
+    token = request.data.get('token')
+    if not token:
+        return Response({"error": "Token is required"}, status=400)
 
-            # Create or update the user
-            user, created = User.objects.get_or_create(username=email, email=email)
-            if created:
-                user.first_name = name
-                user.save()
+    try:
+        # Verify the token with Google
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), "984202558833-4i7fjbmtdu19qc2j7q63vfu1sso4t0as.apps.googleusercontent.com")
+        user_id = idinfo['sub']
+        email = idinfo.get('email')
 
-            # Generate JWT tokens
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-            }, status=status.HTTP_200_OK)
-
-        return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+        # Authenticate or create the user here as per your application logic
+        return Response({"message": "Login successful", "data": idinfo})
+    except ValueError as e:
+        return Response({"error": "Invalid token"}, status=400)
